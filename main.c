@@ -48,7 +48,7 @@ bool Button(Rectangle rect, const char *label) {
     bool clicked = hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     DrawRectangleRec(rect, hovered ? LIGHTGRAY : RAYWHITE);
     DrawRectangleLinesEx(rect, 1, BLACK);
-    DrawText(label, rect.x + 8, rect.y + 8, 16, BLACK);
+    if (label) DrawText(label, rect.x + 8, rect.y + 8, 16, BLACK);
     return clicked;
 }
 
@@ -81,9 +81,9 @@ void DrawPlotLegend() {
             swatch_size,
             swatch_size,
         };
-        bool hovered = CheckCollisionPointRec(GetMousePosition(), rect);
-        bool clicked = hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-        if (clicked) registeredPlots[i].active = !registeredPlots[i].active;
+        if (Button(rect, "")) {
+            registeredPlots[i].active = !registeredPlots[i].active;
+        }
         Color swatch_color = registeredPlots[i].active ? registeredPlots[i].color : Fade(registeredPlots[i].color, 0.5f);
         DrawRectangle(legend_x + inner_padding, start_y, swatch_size, swatch_size, swatch_color);
         DrawText(registeredPlots[i].functionName, legend_x + inner_padding + swatch_size + 4, start_y, font_size, registeredPlots[i].active ? BLACK: GRAY);
@@ -222,7 +222,7 @@ void DrawLegend() {
 }
 
 int main() {
-    // SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
     InitWindow(WIDTH, HEIGHT, "Function Plotter");
     SetTargetFPS(60);
 
