@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 #include "raylib.h"
 
 // Macro magic to get function names for the legend
@@ -47,8 +48,10 @@ bool Button(Rectangle rect, const char *label) {
     bool hovered = CheckCollisionPointRec(GetMousePosition(), rect);
     bool clicked = hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     DrawRectangleRec(rect, hovered ? LIGHTGRAY : RAYWHITE);
-    DrawRectangleLinesEx(rect, 1, BLACK);
-    if (label) DrawText(label, rect.x + 8, rect.y + 8, 16, BLACK);
+    if (strcmp(label, "")) {
+        DrawText(label, rect.x + 8, rect.y + 8, 16, BLACK);
+        DrawRectangleLinesEx(rect, 1, BLACK);
+    }
     return clicked;
 }
 
