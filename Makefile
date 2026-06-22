@@ -1,13 +1,13 @@
-CC      := cc
-TARGET  := main
-SRCS    := $(wildcard *.c)
+CXX     := c++
+TARGET  := plotter
+SRCS    := plotter.cpp
 
-CFLAGS  := -std=c17 -Wall -Wextra -I/opt/homebrew/include
+CFLAGS  := -std=c++17 -Wall -Wextra -I/opt/homebrew/include
 LDFLAGS := -L/opt/homebrew/lib -lraylib \
 		 -framework Cocoa -framework IOKit -framework CoreVideo -framework OpenGL
 
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) $(SRCS) -o $(TARGET) $(LDFLAGS)
+	$(CXX) $(CFLAGS) $(SRCS) -o $(TARGET) $(LDFLAGS)
 
 run: $(TARGET)
 	./$(TARGET)
