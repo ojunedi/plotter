@@ -1,0 +1,9 @@
+expr    = term (('+' | '-') term)*
+term    = factor (('*' | '/') factor)*
+factor  = base ('^' factor)*
+base    = number
+        | 'x'
+        | 'pi' | 'e'
+        | '-' base
+        | '(' expr ')'
+        | name '(' expr ')'
