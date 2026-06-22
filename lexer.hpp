@@ -49,7 +49,7 @@ inline std::vector<Token> lex(const std::string &src) {
     int i = 0;
     while (i < n) {
 
-        if (std::isspace(src[i])) {i++; continue;}
+        while (i < n && std::isspace(src[i])) {i++;}
 
         if (isdigit(src[i]) || src[i] == '.') {
             std::string num;

@@ -1,9 +1,10 @@
-#include "ast.hpp"
-#include "lexer.hpp"
 #include <memory>
 #include <math.h>
 #include <iostream>
 #include <stdexcept>
+#include "ast.hpp"
+#include "lexer.hpp"
+#include "eval.hpp"
 
 
 struct Parser {
@@ -96,9 +97,7 @@ Expr Parser::ParseTerm() {
 
 Expr Parser::ParseExpr() {
 
-
     Expr left = ParseTerm();
-
     while (peek().type == TokenType::Plus || peek().type == TokenType::Minus) {
         TokenType op = consume().type;
         Expr right = ParseTerm();
@@ -110,12 +109,15 @@ Expr Parser::ParseExpr() {
 
 
 int main() {
-
-    auto tokens = lex("sin(2) + (5 + 10*(pi^2))");
-    for (auto t: tokens) {
-        std::cout << t << std::endl;
-    }
+    std::string expr_str = "sin(x) + x^2";
+    auto tokens = lex(expr_str);
     Parser p{tokens, 0};
-    std::cout << p.Parse() << std::endl;
+    Expr expr = p.Parse();
+
+    std::cout << "AST: " << expr << "\n";
+
+    for (float x : {0.0f, 1.0f, 2.0f, 3.14f}) {
+        std::cout << "f(" << x << ") = " << eval(expr, x) << "\n";
+    }
 
 }
