@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cctype>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,22 @@ struct Token {
     std::string text = ""; // For identifers
 };
 
+
+inline std::ostream &operator<<(std::ostream &os, const Token &t) {
+    switch (t.type) {
+        case TokenType::Number: return os << "Token(Number, " << t.value << ")";
+        case TokenType::Ident:  return os << "Token(Ident, \"" << t.text << "\")";
+        case TokenType::Plus:   return os << "Token(Plus)";
+        case TokenType::Minus:  return os << "Token(Minus)";
+        case TokenType::Star:   return os << "Token(Star)";
+        case TokenType::Slash:  return os << "Token(Slash)";
+        case TokenType::Caret:  return os << "Token(Caret)";
+        case TokenType::LParen: return os << "Token(LParen)";
+        case TokenType::RParen: return os << "Token(RParen)";
+        case TokenType::End:    return os << "Token(End)";
+    }
+    return os;
+}
 
 inline std::vector<Token> lex(const std::string &src) {
 
