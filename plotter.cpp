@@ -1,9 +1,13 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <optional>
+#include <unordered_map>
 #include <string>
 #include <vector>
 #include "raylib.h"
+#include "parser.hpp"
+#include "eval.hpp"
 
 #define plot(f, c) plot_impl(f, c, #f)
 #define MAX_INTERSECTIONS 256
@@ -29,6 +33,7 @@ Vector2 pan = {0, 0};
 
 std::vector<Plot> plots;
 std::vector<Vector2> intersectionPoints;
+std::unordered_map<std::string, bool> activeStates;
 
 Vector2 toScreen(Vector2 world) {
     return Vector2{
@@ -62,14 +67,8 @@ bool ResetButton() {
 }
 
 void plot_impl(MathFunction f, Color color, const char *name) {
-    // find existing slot by name to preserve active state
-    bool active = true;
-    for (auto &p : plots) {
-        if (p.name == name) {
-            active = p.active;
-            break;
-        }
-    }
+    auto it = activeStates.find(name);
+    bool active = (it != activeStates.end()) ? it->second : true;
 
     if (active) {
         float range = 10.0f / zoom;
@@ -176,7 +175,10 @@ void DrawPlotLegend() {
     int start_y = outer_padding + inner_padding;
     for (int i = 0; i < entries; i++) {
         Rectangle rect{(float)(legend_x + inner_padding), (float)start_y, (float)swatch_size, (float)swatch_size};
-        if (Button(rect, "")) plots[i].active = !plots[i].active;
+        if (Button(rect, "")) {
+            plots[i].active = !plots[i].active;
+            activeStates[plots[i].name] = plots[i].active;
+        }
         Color swatch = plots[i].active ? plots[i].color : Fade(plots[i].color, 0.5f);
         DrawRectangle(legend_x + inner_padding, start_y, swatch_size, swatch_size, swatch);
         DrawText(plots[i].name.c_str(), legend_x + inner_padding + swatch_size + 4, start_y,
@@ -185,10 +187,73 @@ void DrawPlotLegend() {
     }
 }
 
+struct UserExpr {
+    std::string  source;
+    Expr         expr;
+    Color        color;
+    bool         active = true;
+};
+
+const Color USER_COLORS[] = { ORANGE, PINK, SKYBLUE, LIME, GOLD, VIOLET };
+const int   NUM_USER_COLORS = 6;
+
+std::vector<UserExpr> userExprs;
+
+struct TextInput {
+    std::string buf;
+    bool        focused = false;
+    std::string error;
+};
+
+void DrawTextInput(TextInput &input) {
+    const int pad = 6;
+    Rectangle rect{10, HEIGHT - 40, WIDTH - 90, 28};
+
+    if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        input.focused = true;
+    else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+        input.focused = false;
+
+    DrawRectangleRec(rect, RAYWHITE);
+    DrawRectangleLinesEx(rect, input.focused ? 2 : 1, input.focused ? BLUE : LIGHTGRAY);
+    DrawText(input.buf.c_str(), rect.x + pad, rect.y + pad, 16, BLACK);
+
+    if (!input.error.empty())
+        DrawText(input.error.c_str(), rect.x, rect.y - 22, 14, RED);
+
+    if (input.focused) {
+        int ch;
+        while ((ch = GetCharPressed()) > 0)
+            input.buf += (char)ch;
+
+        if (IsKeyPressed(KEY_BACKSPACE) && !input.buf.empty())
+            input.buf.pop_back();
+
+        if (IsKeyPressed(KEY_ESCAPE))
+            input.focused = false;
+
+        if (IsKeyPressed(KEY_ENTER) && !input.buf.empty()) {
+            try {
+                auto tokens = lex(input.buf);
+                Parser p{tokens, 0};
+                Expr expr = p.Parse();
+                Color color = USER_COLORS[userExprs.size() % NUM_USER_COLORS];
+                userExprs.push_back({input.buf, std::move(expr), color});
+                input.buf.clear();
+                input.error.clear();
+                input.focused = false;
+            } catch (std::exception &e) {
+                input.error = e.what();
+            }
+        }
+    }
+}
+
 int main() {
     SetConfigFlags(FLAG_WINDOW_HIGHDPI);
     InitWindow(WIDTH, HEIGHT, "Function Plotter");
     SetTargetFPS(60);
+    TextInput input;
 
     while (!WindowShouldClose()) {
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
@@ -204,17 +269,21 @@ int main() {
         BeginDrawing();
             ClearBackground(RAYWHITE);
             DrawCoordinatePlane();
-            plot(sinf,      BLUE);
-            plot(cosf,      RED);
-            plot(coshf,     GREEN);
-            plot(quadratic, PURPLE);
-            plot(expf,      BLACK);
-            plot(atanf,     MAROON);
-            plot(linear1,   BLUE);
-            plot(linear2,   RED);
+            // plot(sinf,      BLUE);
+            // plot(cosf,      RED);
+            // plot(coshf,     GREEN);
+            // plot(quadratic, PURPLE);
+            // plot(expf,      BLACK);
+            // plot(atanf,     MAROON);
+            // plot(linear1,   BLUE);
+            // plot(linear2,   RED);
+            for (auto &ue : userExprs) {
+                plot_impl([&ue](float x) { return (float)eval(ue.expr, x); }, ue.color, ue.source.c_str());
+            }
             DrawIntersections();
             DrawScaleLegend();
             DrawPlotLegend();
+            DrawTextInput(input);
             if (ResetButton()) {
                 zoom = 1.0f;
                 pan  = Vector2{0, 0};
