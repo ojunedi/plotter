@@ -1,7 +1,6 @@
 #pragma once
 #include "ast.hpp"
 #include "lexer.hpp"
-#include <cmath>
 #include <memory>
 #include <stdexcept>
 
