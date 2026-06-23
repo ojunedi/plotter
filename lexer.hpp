@@ -49,7 +49,7 @@ inline std::vector<Token> lex(const std::string &src) {
     int i = 0;
     while (i < n) {
 
-        while (i < n && std::isspace(src[i])) {i++;}
+        while (i < n && std::isspace(src[i])) i++;
 
         if (isdigit(src[i]) || src[i] == '.') {
             std::string num;
@@ -60,7 +60,7 @@ inline std::vector<Token> lex(const std::string &src) {
         }
         if (std::isalpha(src[i])) {
             std::string ident;
-            while (i < n && (std::isalpha(src[i]) || std::isdigit(src[i])))
+            while (i < n && (std::isalpha(src[i]) || std::isdigit(src[i]))) // log10(x)
                 ident += src[i++];
             tokens.push_back(Token {TokenType::Ident, 0, ident});
             continue;
