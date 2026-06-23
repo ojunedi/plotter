@@ -31,36 +31,36 @@ inline Expr Parser::Parse() {
 
 inline Expr Parser::ParseBase() {
     switch (peek().type) {
-    case TokenType::Number: {
-        auto v = consume().value;
-        return Number{v};
-    }
-    case TokenType::Ident: {
-        auto prev = consume();
-        if (peek().type == TokenType::LParen) {
-            consume();
-            auto arg = ParseExpr();
-            expect(TokenType::RParen);
-            return FuncCall{prev.text, std::make_unique<Expr>(std::move(arg))};
-        } else {
-            if (prev.text == "x")   return Variable{};
-            if (prev.text == "pi")  return Number{M_PI};
-            if (prev.text == "e")   return Number{M_E};
-            throw std::runtime_error("unknown identifier: " + prev.text);
+        case TokenType::Number: {
+            auto v = consume().value;
+            return Number{v};
         }
-    }
-    case TokenType::Minus: {
-        consume();
-        Expr operand = ParseBase();
-        return UnaryMinus{std::make_unique<Expr>(std::move(operand))};
-    }
-    case TokenType::LParen: {
-        consume();
-        Expr inner = ParseExpr();
-        expect(TokenType::RParen);
-        return inner;
-    }
-    default: throw std::runtime_error("unexpected token in expression");
+        case TokenType::Ident: {
+            auto prev = consume();
+            if (peek().type == TokenType::LParen) {
+                consume();
+                Expr arg = ParseExpr();
+                expect(TokenType::RParen);
+                return FuncCall{prev.text, std::make_unique<Expr>(std::move(arg))};
+            } else {
+                if (prev.text == "x")   return Variable{};
+                if (prev.text == "pi")  return Number{M_PI};
+                if (prev.text == "e")   return Number{M_E};
+                throw std::runtime_error("unknown identifier: " + prev.text);
+            }
+        }
+        case TokenType::Minus: {
+            consume();
+            Expr operand = ParseBase();
+            return UnaryMinus{std::make_unique<Expr>(std::move(operand))};
+        }
+        case TokenType::LParen: {
+            consume();
+            Expr inner = ParseExpr();
+            expect(TokenType::RParen);
+            return inner;
+        }
+        default: throw std::runtime_error("unexpected token in expression");
     }
 }
 
@@ -76,8 +76,16 @@ inline Expr Parser::ParseFactor() {
 
 inline Expr Parser::ParseTerm() {
     Expr left = ParseFactor();
-    while (peek().type == TokenType::Star || peek().type == TokenType::Slash) {
-        TokenType op = consume().type;
+    for (;;) {
+        TokenType t = peek().type;
+        TokenType op;
+        if (t == TokenType::Star || t == TokenType::Slash) {
+            op = consume().type;
+        } else if (t == TokenType::Number || t == TokenType::Ident || t == TokenType::LParen) {
+            op = TokenType::Star; // implicit multiplication, e.g. 2x, 2sin(x), (x+1)(x-2)
+        } else {
+            break;
+        }
         Expr right = ParseFactor();
         left = BinOp{op, std::make_unique<Expr>(std::move(left)), std::make_unique<Expr>(std::move(right))};
     }

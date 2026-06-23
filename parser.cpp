@@ -3,7 +3,7 @@
 #include <iostream>
 
 int main() {
-    std::string expr_str = "sin(x) + x^2";
+    std::string expr_str = "log10(x)";
     auto tokens = lex(expr_str);
     Parser p{tokens, 0};
     Expr expr = p.Parse();

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <functional>
@@ -12,8 +13,8 @@
 #define plot(f, c) plot_impl(f, c, #f)
 #define MAX_INTERSECTIONS 256
 
-const float WIDTH     = 800.0f;
-const float HEIGHT    = 800.0f;
+const float WIDTH     = 1000.0f;
+const float HEIGHT    = 1000.0f;
 const float CELL_SIZE = 40.0f;
 const float A = 1;
 const float B = -1;
@@ -30,6 +31,10 @@ struct Plot {
 
 float zoom = 1.0f;
 Vector2 pan = {0, 0};
+
+// Vertical anchor for the bottom UI bar. Set in main() to the visible screen
+// height so the bar stays on-screen even when the window is taller than the display.
+float uiBottom = HEIGHT;
 
 std::vector<Plot> plots;
 std::vector<Vector2> intersectionPoints;
@@ -49,6 +54,12 @@ Vector2 toWorld(Vector2 screen) {
     };
 }
 
+// Half-extent of the visible world, derived from the window so the grid and
+// curves fill the whole window at any size (was hardcoded to 10 for an 800px window).
+float worldRange() {
+    return (std::max(WIDTH, HEIGHT) / 2.0f) / (zoom * CELL_SIZE);
+}
+
 float quadratic(float x) { return A*x*x + B*x + C; }
 float linear1(float x)   { return x; }
 float linear2(float x)   { return 3*x + 4; }
@@ -63,7 +74,7 @@ bool Button(Rectangle rect, const char *label) {
 }
 
 bool ResetButton() {
-    return Button(Rectangle{WIDTH - 70, HEIGHT - 40, 60, 28}, "Reset");
+    return Button(Rectangle{WIDTH - 70, uiBottom - 40, 60, 28}, "Reset");
 }
 
 void plot_impl(MathFunction f, Color color, const char *name) {
@@ -71,7 +82,7 @@ void plot_impl(MathFunction f, Color color, const char *name) {
     bool active = (it != activeStates.end()) ? it->second : true;
 
     if (active) {
-        float range = 10.0f / zoom;
+        float range = worldRange();
         float step  = 1.0f / (zoom * CELL_SIZE);
         Vector2 prev = toScreen(Vector2{pan.x - range, f(pan.x - range)});
         for (float x = pan.x - range; x <= pan.x + range; x += step) {
@@ -85,7 +96,7 @@ void plot_impl(MathFunction f, Color color, const char *name) {
 }
 
 void DrawCoordinatePlane() {
-    float range = 10.0f / zoom;
+    float range = worldRange();
 
     for (float x = floorf(pan.x - range); x <= pan.x + range; x++) {
         DrawLineV(toScreen(Vector2{x, pan.y + range}), toScreen(Vector2{x, pan.y - range}), LIGHTGRAY);
@@ -100,7 +111,7 @@ void DrawCoordinatePlane() {
 }
 
 void DrawIntersections() {
-    float range = 10.0f / zoom;
+    float range = worldRange();
     float step  = 1.0f / (zoom * CELL_SIZE);
     intersectionPoints.clear();
 
@@ -135,7 +146,7 @@ void DrawIntersections() {
         float dx = mouse.x - pt.x, dy = mouse.y - pt.y;
         if (dx*dx + dy*dy < 12*12) {
             char label[64];
-            snprintf(label, sizeof(label), "(%.2f, %.2f)", pt_world.x, pt_world.y);
+            snprintf(label, sizeof(label), "(%.3f, %.3f)", pt_world.x, pt_world.y);
             const int font_size = 16, pad = 4;
             int tw = MeasureText(label, font_size);
             int tx = pt.x + 10, ty = pt.y - 24;
@@ -205,9 +216,12 @@ struct TextInput {
     std::string error;
 };
 
+
+
+
 void DrawTextInput(TextInput &input) {
     const int pad = 6;
-    Rectangle rect{10, HEIGHT - 40, WIDTH - 90, 28};
+    Rectangle rect{10, uiBottom - 40, WIDTH - 90, 28};
 
     if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
         input.focused = true;
@@ -250,9 +264,14 @@ void DrawTextInput(TextInput &input) {
 }
 
 int main() {
-    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
     InitWindow(WIDTH, HEIGHT, "Function Plotter");
     SetTargetFPS(60);
+
+    // Keep the bottom bar within the visible screen if the window is taller than the display.
+    float visibleH = (float)GetMonitorHeight(GetCurrentMonitor()) - 60.0f;
+    uiBottom = std::min(HEIGHT, visibleH);
+
     TextInput input;
 
     while (!WindowShouldClose()) {
@@ -269,7 +288,7 @@ int main() {
         BeginDrawing();
             ClearBackground(RAYWHITE);
             DrawCoordinatePlane();
-            // plot(sinf,      BLUE);
+            plot(sinf,      BLUE);
             // plot(cosf,      RED);
             // plot(coshf,     GREEN);
             // plot(quadratic, PURPLE);

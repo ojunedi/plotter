@@ -60,7 +60,7 @@ inline std::vector<Token> lex(const std::string &src) {
         }
         if (std::isalpha(src[i])) {
             std::string ident;
-            while (i < n && std::isalpha(src[i]))
+            while (i < n && (std::isalpha(src[i]) || std::isdigit(src[i])))
                 ident += src[i++];
             tokens.push_back(Token {TokenType::Ident, 0, ident});
             continue;
