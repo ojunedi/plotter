@@ -95,19 +95,63 @@ void plot_impl(MathFunction f, Color color, const char *name) {
     plots.push_back(Plot{f, color, name, active});
 }
 
+// Smallest "nice" world-step (1, 2, 5 x 10^n) that keeps labels at least minPx apart.
+float niceStep(float minPx) {
+    float raw  = minPx / (zoom * CELL_SIZE);
+    float mag  = powf(10.0f, floorf(log10f(raw)));
+    float n    = raw / mag;
+    float nice = (n <= 1.0f) ? 1.0f : (n <= 2.0f) ? 2.0f : (n <= 5.0f) ? 5.0f : 10.0f;
+    return nice * mag;
+}
+
 void DrawCoordinatePlane() {
     float range = worldRange();
+    float step  = niceStep(50.0f);
 
-    for (float x = floorf(pan.x - range); x <= pan.x + range; x++) {
+    // Faint gridlines at every labeled step, so each gridline gets a tick + label.
+    for (float x = ceilf((pan.x - range) / step) * step; x <= pan.x + range; x += step)
         DrawLineV(toScreen(Vector2{x, pan.y + range}), toScreen(Vector2{x, pan.y - range}), LIGHTGRAY);
-    }
-    for (float y = floorf(pan.y - range); y <= pan.y + range; y++) {
+    for (float y = ceilf((pan.y - range) / step) * step; y <= pan.y + range; y += step)
         DrawLineV(toScreen(Vector2{pan.x - range, y}), toScreen(Vector2{pan.x + range, y}), LIGHTGRAY);
+
+    // Bold axes.
+    Vector2 origin = toScreen(Vector2{0, 0});
+    DrawLineEx(Vector2{origin.x, 0}, Vector2{origin.x, HEIGHT}, 5, BLACK);
+    DrawLineEx(Vector2{0, origin.y}, Vector2{WIDTH, origin.y},  5, BLACK);
+
+    // Ticks + number labels: fixed pixel size in screen space, anchored to the
+    // axes and clamped so they stay visible when an axis is panned off-screen.
+    const float TICK = 5.0f;   // half-length of a tick, in pixels
+    const int   FS   = 14;     // label font size
+    float axisY = std::min(std::max(origin.y, 0.0f), HEIGHT); // x-axis row, clamped
+    float axisX = std::min(std::max(origin.x, 0.0f), WIDTH);  // y-axis column, clamped
+
+    // x-axis ticks/labels
+    for (float x = ceilf((pan.x - range) / step) * step; x <= pan.x + range; x += step) {
+        if (fabsf(x) < step * 0.5f) continue;                 // skip origin
+        float sx = toScreen(Vector2{x, 0}).x;
+        DrawLineEx(Vector2{sx, axisY - TICK}, Vector2{sx, axisY + TICK}, 2, BLACK);
+        char buf[24]; snprintf(buf, sizeof buf, "%g", x);
+        int tw = MeasureText(buf, FS);
+        float ly = axisY + TICK + 2;
+        if (ly > HEIGHT - FS) ly = axisY - TICK - 2 - FS;     // flip above if near bottom
+        DrawText(buf, (int)(sx - tw / 2.0f), (int)ly, FS, DARKGRAY);
     }
 
-    Vector2 origin = toScreen(Vector2{0, 0});
-    DrawLineEx(Vector2{origin.x, 0},     Vector2{origin.x, HEIGHT}, 5, BLACK);
-    DrawLineEx(Vector2{0, origin.y},     Vector2{WIDTH, origin.y},  5, BLACK);
+    // y-axis ticks/labels
+    for (float y = ceilf((pan.y - range) / step) * step; y <= pan.y + range; y += step) {
+        if (fabsf(y) < step * 0.5f) continue;
+        float sy = toScreen(Vector2{0, y}).y;
+        DrawLineEx(Vector2{axisX - TICK, sy}, Vector2{axisX + TICK, sy}, 2, BLACK);
+        char buf[24]; snprintf(buf, sizeof buf, "%g", y);
+        int tw = MeasureText(buf, FS);
+        float lx = axisX + TICK + 4;
+        if (lx > WIDTH - tw) lx = axisX - TICK - 4 - tw;      // flip left if near right edge
+        DrawText(buf, (int)lx, (int)(sy - FS / 2.0f), FS, DARKGRAY);
+    }
+
+    // origin label
+    DrawText("0", (int)(axisX + 4), (int)(axisY + 4), FS, DARKGRAY);
 }
 
 void DrawIntersections() {
