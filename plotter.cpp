@@ -84,11 +84,21 @@ void plot_impl(MathFunction f, Color color, const char *name) {
     if (active) {
         float range = worldRange();
         float step  = 1.0f / (zoom * CELL_SIZE);
-        Vector2 prev = toScreen(Vector2{pan.x - range, f(pan.x - range)});
+        float T  = range;                                     // "large" magnitude, scales with zoom
+        float lo = pan.y - 2 * range, hi = pan.y + 2 * range; // clamp band keeps screen coords sane
+
+        float rawPrev = f(pan.x - range);
+        Vector2 prev  = toScreen(Vector2{pan.x - range, std::clamp(rawPrev, lo, hi)});
         for (float x = pan.x - range; x <= pan.x + range; x += step) {
-            Vector2 curr = toScreen(Vector2{x, f(x)});
-            DrawLineEx(prev, curr, 2, color);
-            prev = curr;
+            float raw    = f(x);
+            Vector2 curr = toScreen(Vector2{x, std::clamp(raw, lo, hi)});
+            // Skip only true discontinuities: non-finite, or an asymptote crossing
+            // (sign flip with large magnitude). Steep on-branch segments are kept and
+            // clipped to the window, so spikes reach the screen edge cleanly.
+            bool jump = (rawPrev > 0) != (raw > 0) && (fabsf(rawPrev) > T || fabsf(raw) > T);
+            bool ok   = std::isfinite(rawPrev) && std::isfinite(raw) && !jump;
+            if (ok) DrawLineEx(prev, curr, 2, color);
+            prev = curr; rawPrev = raw;
         }
     }
 
@@ -307,6 +317,29 @@ void DrawTextInput(TextInput &input) {
     }
 }
 
+void DrawMouseHover() {
+    Vector2 mouse = GetMousePosition();
+    float wx = toWorld(mouse).x;
+    for (Plot &p: plots) {
+        if (!p.active) continue;
+        float wy = p.func(wx);
+        if (!std::isfinite(wy)) continue;
+        Vector2 pt = toScreen({wx, wy});
+        if (fabsf(pt.y - mouse.y) < 10) {
+            char label[64];
+            snprintf(label, sizeof(label), "(%.3f, %.3f)", wx, wy);
+            const int font_size = 16, pad = 4;
+            int tw = MeasureText(label, font_size);
+            int tx = pt.x + 10, ty = pt.y - 24;
+            DrawRectangle(tx - pad, ty - pad, tw + pad*2, font_size + pad*2, RAYWHITE);
+            DrawRectangleLines(tx - pad, ty - pad, tw + pad*2, font_size + pad*2, LIGHTGRAY);
+            DrawText(label, tx, ty, font_size, BLACK);
+            DrawCircleV(pt, 4, WHITE);
+            DrawCircleLinesV(pt, 4, BLACK);
+        }
+    }
+}
+
 int main() {
     SetConfigFlags(FLAG_WINDOW_HIGHDPI | FLAG_MSAA_4X_HINT);
     InitWindow(WIDTH, HEIGHT, "Function Plotter");
@@ -332,7 +365,7 @@ int main() {
         BeginDrawing();
             ClearBackground(RAYWHITE);
             DrawCoordinatePlane();
-            plot(sinf,      BLUE);
+            // plot(sinf,      BLUE);
             // plot(cosf,      RED);
             // plot(coshf,     GREEN);
             // plot(quadratic, PURPLE);
@@ -346,6 +379,7 @@ int main() {
             DrawIntersections();
             DrawScaleLegend();
             DrawPlotLegend();
+            DrawMouseHover();
             DrawTextInput(input);
             if (ResetButton()) {
                 zoom = 1.0f;
