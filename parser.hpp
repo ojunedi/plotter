@@ -36,17 +36,17 @@ inline Expr Parser::ParseBase() {
         }
         case TokenType::Ident: {
             auto prev = consume();
+            if (prev.text == "x")   return Variable{};
+            if (prev.text == "pi")  return Number{M_PI};
+            if (prev.text == "e")   return Number{M_E};
             if (peek().type == TokenType::LParen) {
                 consume();
                 Expr arg = ParseExpr();
                 expect(TokenType::RParen);
                 return FuncCall{prev.text, std::make_unique<Expr>(std::move(arg))};
-            } else {
-                if (prev.text == "x")   return Variable{};
-                if (prev.text == "pi")  return Number{M_PI};
-                if (prev.text == "e")   return Number{M_E};
-                throw std::runtime_error("unknown identifier: " + prev.text);
             }
+            throw std::runtime_error("unknown identifier: " + prev.text);
+
         }
         case TokenType::Minus: {
             consume();
