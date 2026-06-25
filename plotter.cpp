@@ -19,6 +19,8 @@ const float CELL_SIZE = 40.0f;
 const float A = 1;
 const float B = -1;
 const float C = -1;
+const Color USER_COLORS[] = { ORANGE, PINK, SKYBLUE, LIME, GOLD, VIOLET };
+const int   NUM_USER_COLORS = 6;
 
 using MathFunction = std::function<float(float)>;
 
@@ -29,6 +31,21 @@ struct Plot {
     bool         active = true;
 };
 
+struct UserExpr {
+    std::string  source;
+    Expr         expr;
+    Color        color;
+    bool         active = true;
+};
+
+
+
+struct TextInput {
+    std::string buf;
+    bool        focused = false;
+    std::string error;
+};
+
 float zoom = 1.0f;
 Vector2 pan = {0, 0};
 
@@ -36,6 +53,7 @@ Vector2 pan = {0, 0};
 // height so the bar stays on-screen even when the window is taller than the display.
 float uiBottom = HEIGHT;
 
+std::vector<UserExpr> userExprs;
 std::vector<Plot> plots;
 std::vector<Vector2> intersectionPoints;
 std::unordered_map<std::string, bool> activeStates;
@@ -64,17 +82,28 @@ float quadratic(float x) { return A*x*x + B*x + C; }
 float linear1(float x)   { return x; }
 float linear2(float x)   { return 3*x + 4; }
 
-bool Button(Rectangle rect, const char *label) {
+bool Button(Rectangle rect, const char *label, MouseButton m = MOUSE_BUTTON_LEFT) {
     bool hovered = CheckCollisionPointRec(GetMousePosition(), rect);
-    bool clicked = hovered && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    bool clicked = hovered && IsMouseButtonPressed(m);
     DrawRectangleRec(rect, hovered ? LIGHTGRAY : RAYWHITE);
     DrawRectangleLinesEx(rect, 1, BLACK);
-    if (label[0]) DrawText(label, rect.x + 8, rect.y + 8, 16, BLACK);
+    if (label[0]) {
+        const int font_size = 16;
+        int tw = MeasureText(label, font_size);
+        DrawText(label,
+                 rect.x + (rect.width  - tw)        / 2.0f,
+                 rect.y + (rect.height - font_size) / 2.0f,
+                 font_size, BLACK);
+    }
     return clicked;
 }
 
 bool ResetButton() {
     return Button(Rectangle{WIDTH - 70, uiBottom - 40, 60, 28}, "Reset");
+}
+
+bool ClearButton() {
+    return Button(Rectangle{WIDTH - 70, uiBottom - 40 - 28 - 10, 60, 28}, "Clear");
 }
 
 void plot_impl(MathFunction f, Color color, const char *name) {
@@ -262,6 +291,13 @@ void DrawScaleLegend() {
     DrawText(label, 10, 30, font_size, BLACK);
 }
 
+Rectangle LegendRow(int i) {
+    const int outer = 5, inner = 2, entry_h = 20, w = 120;
+    const int x = WIDTH - w - outer;
+    return Rectangle{(float)x, (float)(outer + inner + i * entry_h), (float)w, (float)entry_h};
+}
+
+
 void DrawPlotLegend() {
     const int outer_padding = 5;
     const int inner_padding = 2;
@@ -273,6 +309,7 @@ void DrawPlotLegend() {
     const int legend_x      = WIDTH - legend_width - outer_padding;
 
     int entries     = std::min((int)plots.size(), max_entries);
+    if (entries == 0) return;  // nothing to show, skip the empty box
     int legend_height = outer_padding + inner_padding + entries * entry_height;
 
     DrawRectangle(legend_x, outer_padding, legend_width, legend_height, RAYWHITE);
@@ -280,8 +317,8 @@ void DrawPlotLegend() {
 
     int start_y = outer_padding + inner_padding;
     for (int i = 0; i < entries; i++) {
-        Rectangle rect{(float)(legend_x + inner_padding), (float)start_y, (float)swatch_size, (float)swatch_size};
-        if (Button(rect, "")) {
+        Rectangle rect = LegendRow(i);
+        if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             plots[i].active = !plots[i].active;
             activeStates[plots[i].name] = plots[i].active;
         }
@@ -293,24 +330,23 @@ void DrawPlotLegend() {
     }
 }
 
-struct UserExpr {
-    std::string  source;
-    Expr         expr;
-    Color        color;
-    bool         active = true;
-};
-
-const Color USER_COLORS[] = { ORANGE, PINK, SKYBLUE, LIME, GOLD, VIOLET };
-const int   NUM_USER_COLORS = 6;
-
-std::vector<UserExpr> userExprs;
-
-struct TextInput {
-    std::string buf;
-    bool        focused = false;
-    std::string error;
-};
-
+// Right-click a legend row to delete that user expression. Kept separate from
+// DrawPlotLegend so drawing and interaction stay distinct.
+void HandleLegendRemoval() {
+    int entries = std::min((int)plots.size(), 6);
+    for (int i = 0; i < entries; i++) {
+        if (CheckCollisionPointRec(GetMousePosition(), LegendRow(i)) &&
+            IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+            std::string name = plots[i].name;
+            for (size_t k = 0; k < userExprs.size(); k++)
+                if (userExprs[k].source == name) { userExprs.erase(userExprs.begin() + k); break; }
+            activeStates.erase(name);
+            plots.clear();  // plots hold lambdas capturing &userExprs[...]; drop them so
+                            // nothing invokes a dangling ref this frame (rebuilt next frame)
+            break;  // one removal per frame
+        }
+    }
+}
 
 
 
@@ -421,11 +457,16 @@ int main() {
             DrawRoots();
             DrawScaleLegend();
             DrawPlotLegend();
+            HandleLegendRemoval();
             DrawMouseHover();
             DrawTextInput(input);
             if (ResetButton()) {
                 zoom = 1.0f;
                 pan  = Vector2{0, 0};
+            }
+            if (ClearButton()) {
+               userExprs.clear();
+               activeStates.clear();
             }
             DrawFPS(10, 10);
         EndDrawing();
