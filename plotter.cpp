@@ -211,6 +211,47 @@ void DrawIntersections() {
     }
 }
 
+// Mark x-intercepts (roots): where each curve crosses y = 0. Same sign-change +
+// interpolation as DrawIntersections, against the constant 0. Marker is filled with
+// the curve's color so roots read differently from the white intersection dots.
+void DrawRoots() {
+    float range = worldRange();
+    float step  = 1.0f / (zoom * CELL_SIZE);
+    float T     = range;   // magnitude gate: reject asymptote sign-flips (e.g. 1/x at 0)
+
+    for (auto &p : plots) {
+        if (!p.active) continue;
+        auto &f = p.func;
+        float prev = f(pan.x - range);
+        for (float x = pan.x - range + step; x <= pan.x + range; x += step) {
+            float curr = f(x);
+            if (std::isfinite(prev) && std::isfinite(curr)
+                && prev * curr <= 0 && (prev != 0 || curr != 0)
+                && fabsf(prev) < T && fabsf(curr) < T) {
+                float t  = fabsf(prev) / (fabsf(prev) + fabsf(curr));
+                float xi = (x - step) + t * step;
+                Vector2 pt = toScreen(Vector2{xi, 0});
+                DrawCircleV(pt, 4, p.color);
+                DrawCircleLinesV(pt, 4, BLACK);
+
+                Vector2 mouse = GetMousePosition();
+                float dx = mouse.x - pt.x, dy = mouse.y - pt.y;
+                if (dx*dx + dy*dy < 12*12) {
+                    char label[64];
+                    snprintf(label, sizeof(label), "(%.3f, 0)", xi);
+                    const int font_size = 16, pad = 4;
+                    int tw = MeasureText(label, font_size);
+                    int tx = pt.x + 10, ty = pt.y - 24;
+                    DrawRectangle(tx - pad, ty - pad, tw + pad*2, font_size + pad*2, RAYWHITE);
+                    DrawRectangleLines(tx - pad, ty - pad, tw + pad*2, font_size + pad*2, LIGHTGRAY);
+                    DrawText(label, tx, ty, font_size, BLACK);
+                }
+            }
+            prev = curr;
+        }
+    }
+}
+
 void DrawScaleLegend() {
     char label[35];
     snprintf(label, sizeof(label), "1 cell = %.2f units", 1.0f / zoom);
@@ -377,6 +418,7 @@ int main() {
                 plot_impl([&ue](float x) { return (float)eval(ue.expr, x); }, ue.color, ue.source.c_str());
             }
             DrawIntersections();
+            DrawRoots();
             DrawScaleLegend();
             DrawPlotLegend();
             DrawMouseHover();
