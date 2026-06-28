@@ -4,22 +4,25 @@
 #include <memory>
 #include <stdexcept>
 
-struct Parser {
-    std::vector<Token> tokens;
-    int pos = 0;
+class Parser {
+    private:
+        std::vector<Token> tokens;
+        int pos = 0;
 
-    Token peek()    { return tokens[pos]; }
-    Token consume() { return tokens[pos++]; }
-    Token expect(TokenType t) {
-        if (peek().type != t) throw std::runtime_error("unexpected token");
-        return consume();
-    }
+        Token peek()    { return tokens[pos]; }
+        Token consume() { return tokens[pos++]; }
+        Token expect(TokenType t) {
+            if (peek().type != t) throw std::runtime_error("unexpected token");
+            return consume();
+        }
 
-    Expr Parse();
-    Expr ParseExpr();
-    Expr ParseTerm();
-    Expr ParseFactor();
-    Expr ParseBase();
+        Expr ParseExpr();
+        Expr ParseTerm();
+        Expr ParseFactor();
+        Expr ParseBase();
+    public:
+        Expr Parse();
+        Parser(std::vector<Token> tokens, int pos): tokens(tokens), pos(pos) {}
 };
 
 inline Expr Parser::Parse() {
