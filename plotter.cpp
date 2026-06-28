@@ -14,8 +14,10 @@
 #define plot(f, c) plot_impl(f, c, #f)
 #define MAX_INTERSECTIONS 256
 
-const float WIDTH     = 1000.0f;
+const float SIDEBAR_W = 260.0f;            // left panel; plot area is to its right
+const float WIDTH     = 1260.0f;           // SIDEBAR_W + 1000px plot area
 const float HEIGHT    = 1000.0f;
+const float PLOT_CX   = SIDEBAR_W + (WIDTH - SIDEBAR_W) / 2.0f;  // plot-area center x
 const float CELL_SIZE = 40.0f;
 const float A = 1;
 const float B = -1;
@@ -32,14 +34,6 @@ struct Plot {
     bool         active = true;
 };
 
-struct UserExpr {
-    std::string  source;
-    Expr         expr;
-    Color        color;
-    bool         active = true;
-};
-
-
 struct ExprRow {
     std::string source;        // the live text you're editing
     Expr        expr;          // cached parse of source
@@ -50,16 +44,6 @@ struct ExprRow {
     bool        focused = false;
 };
 
-
-
-struct TextInput {
-    std::string buf;
-    bool        focused = false;
-    std::string error;
-    Expr expr;
-    bool ok = false;
-};
-
 float zoom = 1.0f;
 Vector2 pan = {0, 0};
 
@@ -67,13 +51,11 @@ Vector2 pan = {0, 0};
 // height so the bar stays on-screen even when the window is taller than the display.
 float uiBottom = HEIGHT;
 
-std::deque<UserExpr> userExprs;
 std::deque<ExprRow> rows;
 std::vector<Plot> plots;
 std::vector<Vector2> intersectionPoints;
 std::unordered_map<std::string, bool> activeStates;
 
-void      reparse(TextInput &in);
 void      reparse(ExprRow &r);
 Vector2   toScreen(Vector2 world);
 Vector2   toWorld(Vector2 screen);
@@ -89,18 +71,13 @@ float     niceStep(float minPx);
 void      DrawCoordinatePlane();
 void      DrawIntersections();
 void      DrawRoots();
-void      DrawScaleLegend();
-Rectangle LegendRow(int i);
-void      DrawPlotLegend();
-void      HandleLegendRemoval();
-void      DrawTextInput(TextInput &input);
 void      DrawMouseHover();
 void      DrawSidebar();
 
 
 
 void DrawSidebar() {
-    const int W = 260, rowH = 40, pad = 8, sw = 20, xw = 24;
+    const int W = (int)SIDEBAR_W, rowH = 40, pad = 8, sw = 20, xw = 24;
     DrawRectangle(0, 0, W, HEIGHT, Fade(LIGHTGRAY, 0.3f));
 
     int  deleteIdx = -1;   // defer mutations until after the loop (don't invalidate indices)
@@ -158,24 +135,6 @@ void DrawSidebar() {
 
 
 
-void reparse(TextInput &in) {
-
-    if (in.buf.empty()) {
-        in.ok = false;
-        return;
-    }
-    try {
-        Parser p{lex(in.buf), 0};
-        in.expr = p.Parse();
-        in.ok = true;
-        in.error.clear();
-    } catch (std::exception &e) {
-        in.error = e.what();
-        in.ok = false;
-        return;
-    }
-}
-
 void reparse(ExprRow &r) {
     if (r.source.empty()) { r.ok = false; return; }
     try {
@@ -189,14 +148,14 @@ void reparse(ExprRow &r) {
 
 Vector2 toScreen(Vector2 world) {
     return Vector2{
-        WIDTH/2  + (world.x - pan.x) * zoom * CELL_SIZE,
+        PLOT_CX  + (world.x - pan.x) * zoom * CELL_SIZE,
         HEIGHT/2 - (world.y - pan.y) * zoom * CELL_SIZE
     };
 }
 
 Vector2 toWorld(Vector2 screen) {
     return Vector2{
-        (screen.x - WIDTH/2)  / (zoom * CELL_SIZE) + pan.x,
+        (screen.x - PLOT_CX)  / (zoom * CELL_SIZE) + pan.x,
         (HEIGHT/2  - screen.y) / (zoom * CELL_SIZE) + pan.y,
     };
 }
@@ -204,7 +163,7 @@ Vector2 toWorld(Vector2 screen) {
 // Half-extent of the visible world, derived from the window so the grid and
 // curves fill the whole window at any size (was hardcoded to 10 for an 800px window).
 float worldRange() {
-    return (std::max(WIDTH, HEIGHT) / 2.0f) / (zoom * CELL_SIZE);
+    return (std::max(WIDTH - SIDEBAR_W, HEIGHT) / 2.0f) / (zoom * CELL_SIZE);
 }
 
 float quadratic(float x) { return A*x*x + B*x + C; }
@@ -285,14 +244,14 @@ void DrawCoordinatePlane() {
     // Bold axes.
     Vector2 origin = toScreen(Vector2{0, 0});
     DrawLineEx(Vector2{origin.x, 0}, Vector2{origin.x, HEIGHT}, 5, BLACK);
-    DrawLineEx(Vector2{0, origin.y}, Vector2{WIDTH, origin.y},  5, BLACK);
+    DrawLineEx(Vector2{SIDEBAR_W, origin.y}, Vector2{WIDTH, origin.y},  5, BLACK);
 
     // Ticks + number labels: fixed pixel size in screen space, anchored to the
     // axes and clamped so they stay visible when an axis is panned off-screen.
     const float TICK = 5.0f;   // half-length of a tick, in pixels
     const int   FS   = 14;     // label font size
-    float axisY = std::min(std::max(origin.y, 0.0f), HEIGHT); // x-axis row, clamped
-    float axisX = std::min(std::max(origin.x, 0.0f), WIDTH);  // y-axis column, clamped
+    float axisY = std::min(std::max(origin.y, 0.0f), HEIGHT);        // x-axis row, clamped
+    float axisX = std::min(std::max(origin.x, SIDEBAR_W), WIDTH);    // y-axis column, clamped to plot area
 
     // x-axis ticks/labels
     for (float x = ceilf((pan.x - range) / step) * step; x <= pan.x + range; x += step) {
@@ -410,127 +369,9 @@ void DrawRoots() {
     }
 }
 
-void DrawScaleLegend() {
-    char label[35];
-    snprintf(label, sizeof(label), "1 cell = %.2f units", 1.0f / zoom);
-    const int font_size = 20, pad = 4;
-    int tw = MeasureText(label, font_size);
-    DrawRectangle(10 - pad, 30 - pad, tw + pad*2, font_size + pad*2, RAYWHITE);
-    DrawRectangleLines(10 - pad, 30 - pad, tw + pad*2, font_size + pad*2, LIGHTGRAY);
-    DrawText(label, 10, 30, font_size, BLACK);
-}
-
-Rectangle LegendRow(int i) {
-    const int outer = 5, inner = 2, entry_h = 20, w = 120;
-    const int x = WIDTH - w - outer;
-    return Rectangle{(float)x, (float)(outer + inner + i * entry_h), (float)w, (float)entry_h};
-}
-
-
-void DrawPlotLegend() {
-    const int outer_padding = 5;
-    const int inner_padding = 2;
-    const int entry_height  = 20;
-    const int swatch_size   = 16;
-    const int font_size     = 16;
-    const int legend_width  = 120;
-    const int max_entries   = 6;
-    const int legend_x      = WIDTH - legend_width - outer_padding;
-
-    int entries     = std::min((int)plots.size(), max_entries);
-    if (entries == 0) return;  // nothing to show, skip the empty box
-    int legend_height = outer_padding + inner_padding + entries * entry_height;
-
-    DrawRectangle(legend_x, outer_padding, legend_width, legend_height, RAYWHITE);
-    DrawRectangleLines(legend_x, outer_padding, legend_width, legend_height, BLACK);
-
-    int start_y = outer_padding + inner_padding;
-    for (int i = 0; i < entries; i++) {
-        Rectangle rect = LegendRow(i);
-        if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            plots[i].active = !plots[i].active;
-            activeStates[plots[i].name] = plots[i].active;
-        }
-        Color swatch = plots[i].active ? plots[i].color : Fade(plots[i].color, 0.5f);
-        DrawRectangle(legend_x + inner_padding, start_y, swatch_size, swatch_size, swatch);
-        DrawText(plots[i].name.c_str(), legend_x + inner_padding + swatch_size + 4, start_y,
-                 font_size, plots[i].active ? BLACK : GRAY);
-        start_y += entry_height;
-    }
-}
-
-// Right-click a legend row to delete that user expression. Kept separate from
-// DrawPlotLegend so drawing and interaction stay distinct.
-void HandleLegendRemoval() {
-    int entries = std::min((int)plots.size(), 6);
-    for (int i = 0; i < entries; i++) {
-        if (CheckCollisionPointRec(GetMousePosition(), LegendRow(i)) &&
-            IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
-            std::string name = plots[i].name;
-            for (size_t k = 0; k < userExprs.size(); k++)
-                if (userExprs[k].source == name) { userExprs.erase(userExprs.begin() + k); break; }
-            activeStates.erase(name);
-            plots.clear();  // plots hold lambdas capturing &userExprs[...]; drop them so
-                            // nothing invokes a dangling ref this frame (rebuilt next frame)
-            break;  // one removal per frame
-        }
-    }
-}
-
-
-
-void DrawTextInput(TextInput &input) {
-    const int pad = 6;
-    Rectangle rect{10, uiBottom - 40, WIDTH - 90, 28};
-
-    if (CheckCollisionPointRec(GetMousePosition(), rect) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
-        input.focused = true;
-    else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
-        input.focused = false;
-
-    DrawRectangleRec(rect, RAYWHITE);
-    DrawRectangleLinesEx(rect, input.focused ? 2 : 1, input.focused ? BLUE : LIGHTGRAY);
-    DrawText(input.buf.c_str(), rect.x + pad, rect.y + pad, 16, BLACK);
-
-    if (!input.error.empty())
-        DrawText(input.error.c_str(), rect.x, rect.y - 22, 14, RED);
-
-    if (input.focused) {
-        int ch;
-        bool dirty = false;
-        while ((ch = GetCharPressed()) > 0) {
-            input.buf += (char)ch;
-            dirty = true;
-        }
-
-        if (IsKeyPressed(KEY_BACKSPACE) && !input.buf.empty()) {
-            input.buf.pop_back();
-            dirty = true;
-        }
-
-        if (dirty) reparse(input);
-
-        if (IsKeyPressed(KEY_ESCAPE)) input.focused = false;
-
-        // if (IsKeyPressed(KEY_ENTER) && !input.buf.empty()) {
-        //     try {
-        //         auto tokens = lex(input.buf);
-        //         Parser p{tokens, 0};
-        //         Expr expr = p.Parse();
-        //         Color color = USER_COLORS[userExprs.size() % NUM_USER_COLORS];
-        //         userExprs.push_back({input.buf, std::move(expr), color});
-        //         input.buf.clear();
-        //         input.error.clear();
-        //         input.focused = false;
-        //     } catch (std::exception &e) {
-        //         input.error = e.what();
-        //     }
-        // }
-    }
-}
-
 void DrawMouseHover() {
     Vector2 mouse = GetMousePosition();
+    if (mouse.x < SIDEBAR_W) return;   // ignore hover over the sidebar
     float wx = toWorld(mouse).x;
     for (Plot &p: plots) {
         if (!p.active) continue;
@@ -595,7 +436,6 @@ int main() {
 
             DrawIntersections();
             DrawRoots();
-            DrawScaleLegend();
             DrawMouseHover();
             DrawSidebar();
             if (ResetButton()) {
@@ -606,7 +446,6 @@ int main() {
                rows.clear();
                activeStates.clear();
             }
-            DrawFPS(10, 10);
         EndDrawing();
     }
 
