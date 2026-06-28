@@ -1,8 +1,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <functional>
-#include <optional>
+#include <deque>
 #include <unordered_map>
 #include <string>
 #include <vector>
@@ -39,11 +40,24 @@ struct UserExpr {
 };
 
 
+struct ExprRow {
+    std::string source;        // the live text you're editing
+    Expr        expr;          // cached parse of source
+    bool        ok = false;    // did source parse this edit?
+    std::string error;         // last parse error (for display)
+    Color       color;
+    bool        active = true;
+    bool        focused = false;
+};
+
+
 
 struct TextInput {
     std::string buf;
     bool        focused = false;
     std::string error;
+    Expr expr;
+    bool ok = false;
 };
 
 float zoom = 1.0f;
@@ -53,10 +67,97 @@ Vector2 pan = {0, 0};
 // height so the bar stays on-screen even when the window is taller than the display.
 float uiBottom = HEIGHT;
 
-std::vector<UserExpr> userExprs;
+std::deque<UserExpr> userExprs;
+std::deque<ExprRow> rows;
 std::vector<Plot> plots;
 std::vector<Vector2> intersectionPoints;
 std::unordered_map<std::string, bool> activeStates;
+
+void      reparse(TextInput &in);
+void      reparse(ExprRow &r);
+Vector2   toScreen(Vector2 world);
+Vector2   toWorld(Vector2 screen);
+float     worldRange();
+float     quadratic(float x);
+float     linear1(float x);
+float     linear2(float x);
+bool      Button(Rectangle rect, const char *label, MouseButton m = MOUSE_BUTTON_LEFT);
+bool      ResetButton();
+bool      ClearButton();
+void      plot_impl(MathFunction f, Color color, const char *name);
+float     niceStep(float minPx);
+void      DrawCoordinatePlane();
+void      DrawIntersections();
+void      DrawRoots();
+void      DrawScaleLegend();
+Rectangle LegendRow(int i);
+void      DrawPlotLegend();
+void      HandleLegendRemoval();
+void      DrawTextInput(TextInput &input);
+void      DrawMouseHover();
+void      DrawSidebar();
+
+
+
+void DrawSidebar() {
+
+    const int w = 260, rowH = 40, pad = 8;
+    DrawRectangle(0, 0, w, HEIGHT, Fade(LIGHTGRAY, 0.3f));
+
+    for (int i = 0; i < (int)rows.size(); ++i) {
+        ExprRow &r = rows[i];
+        Rectangle box {(float)pad, (float)(pad + i*rowH), (float)(w -2*pad), (float)(rowH -4)};
+
+
+        if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            for (int k = 0; k < (int)rows.size(); ++k) rows[k].focused = (k == i);
+
+
+        DrawRectangleRec(box, RAYWHITE);
+        DrawRectangleLinesEx(box, r.focused ? 2 : 1, r.focused ? BLUE : GRAY);
+        DrawText(r.source.c_str(), box.x + 6, box.y + 10, 18, r.ok ? BLACK : RED);
+
+        if (r.focused) {
+            bool changed = false;
+            int ch;
+            while ((ch = GetCharPressed()) > 0) { r.source += (char)ch; changed = true; }
+            if (IsKeyPressed(KEY_BACKSPACE) && !r.source.empty()) { r.source.pop_back(); changed = true; }
+            if (changed) reparse(r);
+        }
+
+    }
+}
+
+
+
+void reparse(TextInput &in) {
+
+    if (in.buf.empty()) {
+        in.ok = false;
+        return;
+    }
+    try {
+        Parser p{lex(in.buf), 0};
+        in.expr = p.Parse();
+        in.ok = true;
+        in.error.clear();
+    } catch (std::exception &e) {
+        in.error = e.what();
+        in.ok = false;
+        return;
+    }
+}
+
+void reparse(ExprRow &r) {
+    if (r.source.empty()) { r.ok = false; return; }
+    try {
+        Parser p{lex(r.source), 0};
+        r.expr = p.Parse();
+        r.ok = true;  r.error.clear();
+    } catch (std::exception &e) {
+        r.error = e.what();  r.ok = false;
+    }
+}
 
 Vector2 toScreen(Vector2 world) {
     return Vector2{
@@ -82,7 +183,7 @@ float quadratic(float x) { return A*x*x + B*x + C; }
 float linear1(float x)   { return x; }
 float linear2(float x)   { return 3*x + 4; }
 
-bool Button(Rectangle rect, const char *label, MouseButton m = MOUSE_BUTTON_LEFT) {
+bool Button(Rectangle rect, const char *label, MouseButton m) {
     bool hovered = CheckCollisionPointRec(GetMousePosition(), rect);
     bool clicked = hovered && IsMouseButtonPressed(m);
     DrawRectangleRec(rect, hovered ? LIGHTGRAY : RAYWHITE);
@@ -368,29 +469,35 @@ void DrawTextInput(TextInput &input) {
 
     if (input.focused) {
         int ch;
-        while ((ch = GetCharPressed()) > 0)
+        bool dirty = false;
+        while ((ch = GetCharPressed()) > 0) {
             input.buf += (char)ch;
-
-        if (IsKeyPressed(KEY_BACKSPACE) && !input.buf.empty())
-            input.buf.pop_back();
-
-        if (IsKeyPressed(KEY_ESCAPE))
-            input.focused = false;
-
-        if (IsKeyPressed(KEY_ENTER) && !input.buf.empty()) {
-            try {
-                auto tokens = lex(input.buf);
-                Parser p{tokens, 0};
-                Expr expr = p.Parse();
-                Color color = USER_COLORS[userExprs.size() % NUM_USER_COLORS];
-                userExprs.push_back({input.buf, std::move(expr), color});
-                input.buf.clear();
-                input.error.clear();
-                input.focused = false;
-            } catch (std::exception &e) {
-                input.error = e.what();
-            }
+            dirty = true;
         }
+
+        if (IsKeyPressed(KEY_BACKSPACE) && !input.buf.empty()) {
+            input.buf.pop_back();
+            dirty = true;
+        }
+
+        if (dirty) reparse(input);
+
+        if (IsKeyPressed(KEY_ESCAPE)) input.focused = false;
+
+        // if (IsKeyPressed(KEY_ENTER) && !input.buf.empty()) {
+        //     try {
+        //         auto tokens = lex(input.buf);
+        //         Parser p{tokens, 0};
+        //         Expr expr = p.Parse();
+        //         Color color = USER_COLORS[userExprs.size() % NUM_USER_COLORS];
+        //         userExprs.push_back({input.buf, std::move(expr), color});
+        //         input.buf.clear();
+        //         input.error.clear();
+        //         input.focused = false;
+        //     } catch (std::exception &e) {
+        //         input.error = e.what();
+        //     }
+        // }
     }
 }
 
@@ -428,6 +535,10 @@ int main() {
 
     TextInput input;
 
+    // seed one row to prove the data model end-to-end (sidebar UI comes in #6)
+    rows.push_back(ExprRow{"sin(x)", {}, false, "", USER_COLORS[0]});
+    reparse(rows.back());
+
     while (!WindowShouldClose()) {
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             Vector2 delta = GetMouseDelta();
@@ -450,9 +561,18 @@ int main() {
             // plot(atanf,     MAROON);
             // plot(linear1,   BLUE);
             // plot(linear2,   RED);
-            for (auto &ue : userExprs) {
-                plot_impl([&ue](float x) { return (float)eval(ue.expr, x); }, ue.color, ue.source.c_str());
+            // for (auto &ue : userExprs) {
+            //     plot_impl([&ue](float x) { return (float)eval(ue.expr, x); }, ue.color, ue.source.c_str());
+            // }
+            if (input.ok)
+                plot_impl([&input](float x) { return (float)eval(input.expr, x); }, USER_COLORS[0], input.buf.c_str());
+
+            // step 3: rebuild plots from rows (the data model)
+            for (auto &r : rows) {
+                if (r.active && r.ok)
+                    plot_impl([&r](float x) { return (float)eval(r.expr, x); }, r.color, r.source.c_str());
             }
+
             DrawIntersections();
             DrawRoots();
             DrawScaleLegend();
@@ -460,12 +580,13 @@ int main() {
             HandleLegendRemoval();
             DrawMouseHover();
             DrawTextInput(input);
+            DrawSidebar();
             if (ResetButton()) {
                 zoom = 1.0f;
                 pan  = Vector2{0, 0};
             }
             if (ClearButton()) {
-               userExprs.clear();
+               rows.clear();
                activeStates.clear();
             }
             DrawFPS(10, 10);
