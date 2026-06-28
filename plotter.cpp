@@ -42,6 +42,7 @@ struct ExprRow {
     Color       color;
     bool        active = true;
     bool        focused = false;
+    float       scroll = 0;        // horizontal text scroll (px) for long sources
 };
 
 float zoom = 1.0f;
@@ -103,17 +104,43 @@ void DrawSidebar() {
         Rectangle box{bx, y + 4, (float)(W - pad - xw - 6) - bx, (float)(rowH - 12)};
         if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             for (int k = 0; k < (int)rows.size(); ++k) rows[k].focused = (k == i);
-        DrawRectangleRec(box, RAYWHITE);
-        DrawRectangleLinesEx(box, r.focused ? 2 : 1, r.focused ? BLUE : GRAY);
-        Color txt = (!r.ok && !r.source.empty()) ? RED : (r.active ? BLACK : GRAY);
-        DrawText(r.source.c_str(), box.x + 6, box.y + 6, 18, txt);
 
+        // live typing first, so the measurements below reflect the current text
+        bool changed = false;
         if (r.focused) {
-            bool changed = false;
             int ch;
             while ((ch = GetCharPressed()) > 0) { r.source += (char)ch; changed = true; }
             if (IsKeyPressed(KEY_BACKSPACE) && !r.source.empty()) { r.source.pop_back(); changed = true; }
             if (changed) reparse(r);
+        }
+
+        // horizontal scroll for text longer than the box
+        const int FS = 18;
+        float innerW    = box.width - 12;
+        float textW     = (float)MeasureText(r.source.c_str(), FS);
+        float maxScroll = std::max(0.0f, textW - innerW);
+        if (changed) r.scroll = maxScroll;                 // keep the caret/end in view while typing
+        r.scroll = std::clamp(r.scroll, 0.0f, maxScroll);
+
+        DrawRectangleRec(box, RAYWHITE);
+        DrawRectangleLinesEx(box, r.focused ? 2 : 1, r.focused ? BLUE : GRAY);
+        Color txt = (!r.ok && !r.source.empty()) ? RED : (r.active ? BLACK : GRAY);
+        BeginScissorMode((int)(box.x + 2), (int)box.y, (int)(box.width - 4), (int)box.height);
+        DrawText(r.source.c_str(), (int)(box.x + 6 - r.scroll), (int)(box.y + 6), FS, txt);
+        EndScissorMode();
+
+        // scroll slider under the box (only when text overflows)
+        if (maxScroll > 0) {
+            Rectangle track{box.x, box.y + box.height + 1, box.width, 4};
+            DrawRectangleRec(track, Fade(GRAY, 0.4f));
+            float thumbW = std::max(20.0f, track.width * innerW / textW);
+            float frac   = r.scroll / maxScroll;
+            Rectangle thumb{track.x + frac * (track.width - thumbW), track.y - 1, thumbW, 6};
+            DrawRectangleRec(thumb, DARKGRAY);
+            if (CheckCollisionPointRec(GetMousePosition(), track) && IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+                float t  = (GetMousePosition().x - track.x - thumbW / 2) / (track.width - thumbW);
+                r.scroll = std::clamp(t, 0.0f, 1.0f) * maxScroll;
+            }
         }
     }
 
@@ -407,7 +434,7 @@ int main() {
     reparse(rows.back());
 
     while (!WindowShouldClose()) {
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && GetMousePosition().x >= SIDEBAR_W) {
             Vector2 delta = GetMouseDelta();
             pan.x -= delta.x / (zoom * CELL_SIZE);
             pan.y += delta.y / (zoom * CELL_SIZE);
