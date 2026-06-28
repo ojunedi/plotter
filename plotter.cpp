@@ -100,22 +100,36 @@ void      DrawSidebar();
 
 
 void DrawSidebar() {
+    const int W = 260, rowH = 40, pad = 8, sw = 20, xw = 24;
+    DrawRectangle(0, 0, W, HEIGHT, Fade(LIGHTGRAY, 0.3f));
 
-    const int w = 260, rowH = 40, pad = 8;
-    DrawRectangle(0, 0, w, HEIGHT, Fade(LIGHTGRAY, 0.3f));
+    int  deleteIdx = -1;   // defer mutations until after the loop (don't invalidate indices)
+    bool addRow    = false;
 
     for (int i = 0; i < (int)rows.size(); ++i) {
         ExprRow &r = rows[i];
-        Rectangle box {(float)pad, (float)(pad + i*rowH), (float)(w -2*pad), (float)(rowH -4)};
+        float y = pad + i * rowH;
 
+        // color swatch — click toggles visibility (#8 color, #9 toggle)
+        Rectangle swatch{(float)pad, y + 6, (float)sw, (float)sw};
+        if (CheckCollisionPointRec(GetMousePosition(), swatch) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            r.active = !r.active;
+        DrawRectangleRec(swatch, r.active ? r.color : Fade(r.color, 0.35f));
+        DrawRectangleLinesEx(swatch, 1, BLACK);
 
+        // delete (×) (#10)
+        Rectangle del{(float)(W - pad - xw), y + 4, (float)xw, (float)(rowH - 12)};
+        if (Button(del, "x")) deleteIdx = i;
+
+        // editable text box (#6) — click to focus, type to edit live
+        float bx = pad + sw + 6;
+        Rectangle box{bx, y + 4, (float)(W - pad - xw - 6) - bx, (float)(rowH - 12)};
         if (CheckCollisionPointRec(GetMousePosition(), box) && IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             for (int k = 0; k < (int)rows.size(); ++k) rows[k].focused = (k == i);
-
-
         DrawRectangleRec(box, RAYWHITE);
         DrawRectangleLinesEx(box, r.focused ? 2 : 1, r.focused ? BLUE : GRAY);
-        DrawText(r.source.c_str(), box.x + 6, box.y + 10, 18, r.ok ? BLACK : RED);
+        Color txt = (!r.ok && !r.source.empty()) ? RED : (r.active ? BLACK : GRAY);
+        DrawText(r.source.c_str(), box.x + 6, box.y + 6, 18, txt);
 
         if (r.focused) {
             bool changed = false;
@@ -124,7 +138,21 @@ void DrawSidebar() {
             if (IsKeyPressed(KEY_BACKSPACE) && !r.source.empty()) { r.source.pop_back(); changed = true; }
             if (changed) reparse(r);
         }
+    }
 
+    // + add a new row (#10)
+    Rectangle add{(float)pad, (float)(pad + rows.size()*rowH), (float)(W - 2*pad), (float)(rowH - 12)};
+    if (Button(add, "+ add")) addRow = true;
+
+    // apply deferred mutations
+    if (deleteIdx >= 0) {
+        rows.erase(rows.begin() + deleteIdx);
+        plots.clear();   // plots hold lambdas capturing the erased row; drop them this frame
+    }
+    if (addRow) {
+        for (auto &rr : rows) rr.focused = false;
+        rows.push_back(ExprRow{"", {}, false, "", USER_COLORS[rows.size() % NUM_USER_COLORS]});
+        rows.back().focused = true;
     }
 }
 
@@ -533,9 +561,7 @@ int main() {
     float visibleH = (float)GetMonitorHeight(GetCurrentMonitor()) - 60.0f;
     uiBottom = std::min(HEIGHT, visibleH);
 
-    TextInput input;
-
-    // seed one row to prove the data model end-to-end (sidebar UI comes in #6)
+    // seed one row so there's something to edit on launch
     rows.push_back(ExprRow{"sin(x)", {}, false, "", USER_COLORS[0]});
     reparse(rows.back());
 
@@ -561,13 +587,7 @@ int main() {
             // plot(atanf,     MAROON);
             // plot(linear1,   BLUE);
             // plot(linear2,   RED);
-            // for (auto &ue : userExprs) {
-            //     plot_impl([&ue](float x) { return (float)eval(ue.expr, x); }, ue.color, ue.source.c_str());
-            // }
-            if (input.ok)
-                plot_impl([&input](float x) { return (float)eval(input.expr, x); }, USER_COLORS[0], input.buf.c_str());
-
-            // step 3: rebuild plots from rows (the data model)
+            // rebuild plots from rows (source of truth)
             for (auto &r : rows) {
                 if (r.active && r.ok)
                     plot_impl([&r](float x) { return (float)eval(r.expr, x); }, r.color, r.source.c_str());
@@ -576,10 +596,7 @@ int main() {
             DrawIntersections();
             DrawRoots();
             DrawScaleLegend();
-            DrawPlotLegend();
-            HandleLegendRemoval();
             DrawMouseHover();
-            DrawTextInput(input);
             DrawSidebar();
             if (ResetButton()) {
                 zoom = 1.0f;
