@@ -1,4 +1,0 @@
--I/opt/homebrew/include
--std=c++17
--Wall
--Wextra
