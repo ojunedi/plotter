@@ -1,8 +1,8 @@
-CXX     := c++
+CXX     := clang++
 TARGET  := plotter
 SRCS    := plotter.cpp
 
-CFLAGS  := -std=c++17 -Wall -Wextra -I/opt/homebrew/include
+CFLAGS  := -std=c++23 -Wall -Wextra -I/opt/homebrew/include
 LDFLAGS := -L/opt/homebrew/lib -lraylib \
 		 -framework Cocoa -framework IOKit -framework CoreVideo -framework OpenGL
 
